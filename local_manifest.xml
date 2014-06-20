@@ -1,0 +1,4 @@
+<manifest>
+  <remote name="github" fetch="git://github.com"/>
+  <project path="device/aosp_pengw_tbnl" remote="github" name="pw4ever/aosp_pengw_tbnl" revision="master"/>
+</manifest>

@@ -22,7 +22,7 @@
 # entirely appropriate to inherit from for on-device configurations.
 
 
-$(call inherit-product, $(SRC_TARGET_DIR)/product/languages_full.mk)
+#$(call inherit-product, $(SRC_TARGET_DIR)/product/languages_full.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_base_telephony.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/board/generic/device.mk)
 
@@ -36,9 +36,14 @@ PRODUCT_DEVICE := pengw_tbnl
 PRODUCT_BRAND := TBBL
 PRODUCT_MODEL := TBNL on ARM Emulator
 
-DEVICE_PACKAGE_OVERLAYS :=
+# put overlays under here
+DEVICE_PACKAGE_OVERLAYS := device/aosp_pengw_tbnl/pengw_tbnl/overlay
 
 PRODUCT_PACKAGES += \
-		    my_hello
+		    tbnl
 
-PRODUCT_COPY_FILES +=
+#PRODUCT_COPY_FILES += \
+#		      device/aosp_pengw_tbnl/pengw_tbnl/fstab.goldfish:root/fstab.goldfish \
+#		      device/aosp_pengw_tbnl/pengw_tbnl/init.goldfish.rc:root/init.goldfish.rc \
+#		      device/aosp_pengw_tbnl/pengw_tbnl/init.goldfish.sh:system/etc/init.goldfish.sh \
+#		      device/aosp_pengw_tbnl/pengw_tbnl/ueventd.goldfish.rc:root/ueventd.goldfish.rc
