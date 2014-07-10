@@ -14,17 +14,17 @@ mkdir -p ${STAGE_HOST}
 cp TEMPLATES/install-to-guest.sh ${STAGE}
 
 # guest side
-GUEST_PATH=${OUT}/system/
-cp ${GUEST_PATH}/framework/tbnl.jar ${STAGE_GUEST}/tbnl.jar
-cp ${GUEST_PATH}/bin/tbnl ${STAGE_GUEST}/tbnl
+#GUEST_PATH=${OUT}/system/
+#cp ${GUEST_PATH}/framework/tbnl.jar ${STAGE_GUEST}/tbnl.jar
+#cp ${GUEST_PATH}/bin/tbnl ${STAGE_GUEST}/tbnl
 
-GUEST_PATH=guest-side-tools/figurehead/
-cp ${GUEST_PATH}/target/figurehead.apk ${STAGE_GUEST}/figurehead.apk
+GUEST_PATH=guest-side-tools/tbnl.figurehead/
+cp ${GUEST_PATH}/target/tbnl.figurehead.apk ${STAGE_GUEST}/figurehead.apk
 cp ${GUEST_PATH}/bin/figurehead ${STAGE_GUEST}/figurehead
 
 # host side
-HOST_PATH=host-side-tools/info.voidstar.android.tbnl.mastermind/
-cp ${HOST_PATH}/target/uberjar/mastermind-*-standalone.jar ${STAGE_HOST}/mastermind.jar
+HOST_PATH=host-side-tools/tbnl.mastermind/
+cp ${HOST_PATH}/target/uberjar/tbnl.mastermind-*-standalone.jar ${STAGE_HOST}/mastermind.jar
 cp ${HOST_PATH}/bin/mastermind ${STAGE_HOST}/mastermind
 
 cp TEMPLATES/00monitor-start.sh ${STAGE_HOST}/

@@ -1,6 +1,0 @@
-# Script to start "tbnl" on the device, which has a very rudimentary
-# shell.
-#
-base=/sdcard
-export CLASSPATH=$base/figurehead.apk
-exec app_process $base/ info.voidstar.android.tbnl.figurehead.Main "$@" 

@@ -1,0 +1,233 @@
+(ns mastermind.util.trace
+  (:require
+   [clojure.set :as set :refer [union]]
+   [clojure.core.async :as async
+    :refer [chan 
+           close!
+           go thread 
+           >! <! >!! <!!
+           alts! alts!!
+           timeout]]
+   [clojure.string :as str]
+   [clojure.java.io :as io]
+   ))
+
+(defn- println-debug [msg verbose?]
+  (when verbose?
+    (binding [*out* *err*]
+      (println msg))))
+
+(defn- create-input-chans [traces]
+  "create async channels from trace sources"
+  (let [input-chans (atom {})]
+    (doseq [trace traces]
+      (let [c (chan)
+            session (keyword (gensym "input-chans"))]
+        (swap! input-chans assoc session c)
+        (go
+          (let [rdr (io/reader trace)]
+            (loop [news (.readLine rdr)]
+              (when news
+                (>! c [session news])
+                (recur (.readLine rdr)))))
+          ;; need to remove itself from input-chans
+          (swap! input-chans dissoc session)
+          (close! c))))
+    input-chans))
+
+(defn- init-model []
+  "create a new model
+
+{
+;; package - activity forms an hierarchy
+:packages
+{
+pkg1
+{
+:name pkg1
+:flags #{:category-home}
+:activities {
+ :a1 {:name \"a1\" :flags #{:category-home}}
+ :a2 {:name \"a2\" :flags #{}} 
+ ...}
+}
+pkg2
+{
+:name pkg2
+:flags #{}
+:activities {...}
+}
+
+:edges
+{
+:act1 {:act2 3 :act3 1}
+...
+}
+
+}"
+  {:packages {}
+   :edges {}})
+
+(defn- update-model! [model state news]
+  (let [
+        parsed-news (read news)
+        action (-> parsed-news :tag)
+        session (-> parsed-news :what :session)
+        package-kwd (-> parsed-news :package)
+        package-str (name package-kwd)
+        ]
+
+    ;; stack is per session-package
+    ;; (when (nil? (get @state session))
+    ;;   (swap! state assoc-in [session]
+    ;;          {:current {
+    ;;                     :package nil
+    ;;                     :component nil 
+    ;;                     }
+    ;;           :packages {}}))
+
+    ; ensure the stack is a vector
+    (swap! state update-in [session :packages package-kwd]
+           vec)
+
+    (let [
+          prev-current (get-in @state [session :current])
+          prev-current-package (:package prev-current)
+          prev-current-component (:component prev-current)
+          stack (get-in @state [session :packages package-kwd])
+          ]
+
+      ;; update state per-session current package pointer
+      (swap! state assoc-in [session :current :package]
+             package-kwd)
+
+      (case action
+        :activity-controller.starting
+        (let [
+              intent-component (-> parsed-news :what :intent-component)
+              prev-intent-component (peek stack)
+              intent-action (-> parsed-news :what :intent-action)
+              intent-category (-> parsed-news :what :intent-category)
+              ]
+
+          (swap! state assoc-in [session :current :component]
+                 intent-component)
+
+          (cond  ;; based on category
+
+           (contains? intent-category
+                      :android.intent.category.HOME)
+           (when (not-empty intent-component)
+
+             ;; update model>packages flags
+             (swap! model assoc-in [:packages package-kwd :name]
+                    package-str)
+             (swap! model update-in [:packages package-kwd :flags]
+                    union
+                    #{:category-home})
+             (swap! model assoc-in [:packages package-kwd :activities intent-component :name]
+                    intent-component)
+             (swap! model update-in [:packages package-kwd :activities intent-component :flags]
+                    union
+                    #{:category-home})
+
+             false ; no model update
+             )
+
+
+           :other ;; other cases
+           (when (not-empty intent-component)
+
+             ;; update per-session+package state when "new" or "not from launcher"
+             (when (or (nil? prev-intent-component)
+                       (not (contains? intent-category
+                                       :android.intent.category.LAUNCHER)))
+               (swap! state update-in [session :packages package-kwd]
+                      conj
+                      intent-component))
+
+             ;; update model>packages
+             (swap! model assoc-in [:packages package-kwd :name]
+                    package-str)
+             (swap! model update-in [:packages package-kwd :flags]
+                    union
+                    (cond
+                     :default
+                     nil
+                     ))
+             (swap! model assoc-in [:packages package-kwd :activities intent-component :name]
+                    intent-component)
+             (swap! model update-in [:packages package-kwd :activities intent-component :flags]
+                    union
+                    (cond
+                     (contains? intent-category
+                                :android.intent.category.LAUNCHER)
+                     #{:category-launcher}
+
+                     :default
+                     nil
+                     ))
+
+             ;; update model>edges
+             (when prev-current-component
+               (swap! model assoc-in [:edges prev-current-component :name]
+                      prev-current-component)
+               (swap! model update-in [:edges prev-current-component :to intent-component]
+                      #(if (nil? %)
+                         1
+                         (inc %))))
+
+             true ; model updated
+             )))
+
+        :activity-controller.resuming  ; state is changed but no model update
+        (when (peek stack)
+          (when (= prev-current-package package-kwd)
+            (swap! state update-in [session :packages package-kwd]
+                   pop))
+          (swap! state assoc-in [session :current :component]
+                 (peek (get-in @state [session :packages package-kwd])))
+          false ; no model update
+          )
+
+        :activity-controller.crashed
+        (let [
+              packages (-> parsed-news :what :packages)
+              ]
+          ;; these packages have crashed --> clear their stacks
+          (doseq [package packages]
+            (swap! state update-in [session :packages]
+                   (dissoc package))))
+        
+        false ; no model update by default
+        ))))
+
+(defn- legitimate-news? [news]
+  (and
+   news
+   (map? news)
+   (:tag news)
+   (:what news)))
+
+(defn work-on-monitor-trace [monitor-trace news-callback verbose?]
+  "upon news arrival, news-callback will be called with [model news news-count]"
+  (let [model (atom (init-model))
+        state (atom {})
+        input-chans (create-input-chans monitor-trace)
+        news-count (atom 0)
+        finished (chan)]
+    (go
+      (loop [input @input-chans]
+        (when (not-empty input)
+          (let [[[_session news] _] (alts! (vals input))]
+            (when-let [news (read-string news)]
+              (when (legitimate-news? news)
+                (println-debug news verbose?)
+                (when (update-model! model state news)
+                  (swap! news-count inc)
+                  (news-callback @model news @news-count)
+                  ))))
+          (recur @input-chans)))
+      (close! finished))
+    ;; this block is deliberate
+    (<!! finished)))
