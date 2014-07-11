@@ -12,22 +12,19 @@
 (def defaults
   (atom
    {
-    :wait 1000
-    :nrepl-port 12321
+    :stop-unblock-tag :stop-core.plugin.nrepl
     }))
 
 (defn populate-parse-opts-vector
   [current-parse-opts-vector]
   (init/add-to-parse-opts-vector [
 
-                                  (let [option :nrepl-port
-                                        default (option @defaults)]
+                                  (let [option :nrepl-port]
                                     ["-R"
                                      (str "--"
                                           (name option)
                                           " [PORT]")
                                      (str "nREPL port")
-                                     :default default
                                      :parse-fn (get-in @init/parse-opts-vector-helper
                                                        [:parse-fn :inet-port])])
 
@@ -38,13 +35,30 @@
   (when (:nrepl-port options)
     true))
 
+;;; archetype of blocking-jail
 (defn run
   [options]
-  (plugin/blocked-thread-wrapper 
-   options
-   (let [nrepl-port (:nrepl-port options)]
-     (plugin/set-state-entry :nrepl-server
-                             (nrepl-server/start-server :port nrepl-port)))))
+  (let [verbose (:verbose options)
+        nrepl-port (:nrepl-port options)]
+    (plugin/blocking-jail [
+                           ;; timeout
+                           nil
+                           ;; unblock-tag
+                           (:stop-unblock-tag @defaults)
+                           ;; finalization
+                           (nrepl-server/stop-server (plugin/get-state-entry :nrepl-server))
+                           ;; verbose
+                           verbose
+                           ]
+                          (plugin/set-state-entry :nrepl-server
+                                                  (nrepl-server/start-server :port nrepl-port)))))
+
+;;; archetype of stopping blocking-jail
+(defn stop
+  [options]
+  (plugin/set-state-entry :core.plugin.nrepl
+                          :stop true)
+  (plugin/unblock-thread (:stop-unblock-tag @defaults)))
 
 (def config-map
   "the config map"
@@ -52,5 +66,6 @@
    :populate-parse-opts-vector populate-parse-opts-vector
    :init init
    :run run
-   :param {:auto-restart true
-           :wait (:wait @defaults)}})
+   :stop stop
+   :param {:priority 0
+           :auto-restart true}})

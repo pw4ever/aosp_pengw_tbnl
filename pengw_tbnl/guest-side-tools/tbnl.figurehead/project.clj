@@ -29,9 +29,11 @@
 
                    }
              :release {
-                       ;; for core.plugin.nrepl.main
+                       ;; for mastermind.plugin.nrepl.main
                        :dependencies [[org.clojure/tools.nrepl "0.2.3"]
                                       [compliment "0.0.3"]]
+                       :enable-dynamic-compilation true
+
                        :android {;; Specify the path to your private keystore
                                  ;; and the the alias of the key you want to
                                  ;; sign APKs with. Do it either here or in

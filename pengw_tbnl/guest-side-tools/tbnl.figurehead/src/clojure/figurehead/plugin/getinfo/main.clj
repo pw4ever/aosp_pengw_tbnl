@@ -12,7 +12,6 @@
              :as async
              :refer [<!! >!! timeout]])
   (:import
-   (java.util UUID)
    (android.content.pm IPackageManager
                        PackageManager
                        
@@ -25,6 +24,7 @@
 (def defaults
   (atom
    {
+    :stop-unblock-tag :stop-figurehead.plugin.getinfo
     :repeat-interval 5000
     :wait 1000
     }))
@@ -50,25 +50,43 @@
 
 (defn run
   [options]
-  (let [verbose (:verbose options)]
-    (let [session-id (-> (UUID/randomUUID) str keyword)]
-      (let [package (:package options)]
-        (if package
-          (bus/say!! :package-manager.get-package-info 
-                     (assoc (get-package-info package)
-                       :session session-id)
-                     verbose)
-          (bus/say!! :package-manager.get-all-packages
-                     (assoc {:packages (into #{} (map (fn [^PackageInfo package-info]
-                                                        (-> package-info .packageName keyword))
-                                                      (get-all-packages)))}
-                       :session session-id)
-                     verbose))))))
+  (let [verbose (:verbose options)
+        package (:package options)
+        instance-id (state/get-state :instance-id)]
+    (plugin/blocking-jail [
+                           ;; timeout
+                           nil
+                           ;; unblock-tag
+                           (:stop-unblock-tag @defaults)
+                           ;; finalization
+                           (do)
+                           ;; verbose
+                           verbose
+                           ]
+                          (if package
+                            (bus/say!! :package-manager.get-package-info 
+                                       (assoc (get-package-info package)
+                                         :instance instance-id)
+                                       verbose)
+                            (bus/say!! :package-manager.get-all-packages
+                                       (assoc {:packages (into #{} (map (fn [^PackageInfo package-info]
+                                                                          (-> package-info .packageName keyword))
+                                                                        (get-all-packages)))}
+                                         :instance instance-id)
+                                       verbose)))))
+
+(defn stop
+  [options]
+  (plugin/set-state-entry :figurehead.plugin.getinfo
+                          :stop true)
+  (plugin/unblock-thread (:stop-unblock-tag @defaults)))
 
 (def config-map
   "the config map"
   {:populate-parse-opts-vector populate-parse-opts-vector
    :init init
    :run run
-   :param {:auto-restart false
+   :stop stop
+   :param {:priority 1
+           :auto-restart false
            :wait (:wait @defaults)}})

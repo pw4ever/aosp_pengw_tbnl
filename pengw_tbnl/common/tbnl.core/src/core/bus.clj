@@ -6,14 +6,15 @@
                      buffer sliding-buffer
                      pub sub unsub
                      mult tap untap
-                     >!!]]))
+                     >!! <!!]]))
 
 (declare 
          sub-topic unsub-topic get-subscribers
          register-listener unregister-listener get-listeners
          get-message-topic remove-message-topic
          get-topics
-         say say!!)
+         say say!!
+         what-is-said what-is-said!!)
 
 (def defaults
   "the defaults"
@@ -109,6 +110,8 @@
     [message]
     ((:remove-message-topic @defaults) message))
 
+
+
   (defn say
     "say what with the topic"
     ([topic what chan-op] (say topic what false chan-op))
@@ -121,6 +124,8 @@
                  :topics (get-topics)
                  :subscribers (get-subscribers)
                  :listeners (get-listeners)})))))
+
+  
 
   ;; say! is omitted because >! may not work with Clojure on Android for SDK 18
   ;; !!! use say! within go block may deadlock
@@ -138,4 +143,25 @@
     ([topic what verbose?]
        (let [chan-op (fn [ch val]
                        (>!! ch val))]
-         (say topic what verbose? chan-op)))))
+         (say topic what verbose? chan-op))))
+
+  (defn what-is-said
+    "get what is from the sub-ch"
+    ([sub-ch chan-op] (what-is-said sub-ch false chan-op))
+    ([sub-ch verbose? chan-op]
+       (let [said (chan-op sub-ch)]
+         (when verbose?
+           (prn [:said said]))
+         (cond (map? said)
+               (:what said)
+
+               :else
+               nil))))
+
+  (defn what-is-said!!
+    "get what is said on sub-ch (<!! as chan-go)"
+    ([sub-ch] (what-is-said!! sub-ch false))
+    ([sub-ch verbose?]
+       (let [chan-op (fn [ch]
+                       (<!! ch))]
+         (what-is-said sub-ch verbose? chan-op)))))

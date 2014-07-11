@@ -14,8 +14,7 @@
 (def defaults
   (atom
    {
-    :wait 1000
-    :echo-buffer 1000
+    :echo-buffer 100
     }))
 
 (defn populate-parse-opts-vector
@@ -30,29 +29,37 @@
 
 (defn init
   [options]
-  (when (not (:disable-echo options))
+  (when-not (:disable-echo options)
     true))
 
+;;; archetype of looping-jail
 (defn run
   [options]
-  (plugin/blocked-thread-wrapper
-   options
-   (let [verbose (:verbose options)
-         ch (chan (:echo-buffer @defaults))]
-     (bus/register-listener ch)
-     (try
-       (while true
-         (prn (<!! ch)))
-       (catch Exception e
-         (when verbose
-           (print-stack-trace e))
-         (bus/unregister-listener ch)
-         (throw e))))))
+  (let [verbose (:verbose options)
+        ch (chan (:echo-buffer @defaults))]
+    (bus/register-listener ch)
+    (plugin/looping-jail [
+                          ;; stop condition
+                          (plugin/get-state-entry :stop)
+                          ;; finalization
+                          (do
+                            (bus/unregister-listener ch))
+                          ;; verbose
+                          verbose]
+                         (prn (<!! ch)))))
+
+;;; archetype of stopping looping-jail
+(defn stop
+  [options]
+  (plugin/set-state-entry :core.plugin.echo
+                          :stop true))
 
 (def config-map
   "the config map"
   {:populate-parse-opts-vector populate-parse-opts-vector
    :init init
    :run run
-   :param {:auto-restart true
-           :wait (:wait @defaults)}})
+   :stop stop
+   :param {:priority 100                ; echo needs to be run first in order to capture all transcripts
+           :auto-restart false
+           }})

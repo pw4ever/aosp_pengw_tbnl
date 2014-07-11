@@ -4,7 +4,7 @@
                   init))
   ;; these "require" are needed to handle lein-droid's :aot "removing unused namespace from classpath" feature
   (:require core.plugin.echo.main
-            core.plugin.nrepl.main
+            figurehead.plugin.nrepl.main
             figurehead.plugin.monitor.main
             figurehead.plugin.getinfo.main
             figurehead.plugin.mastermind.main)
@@ -15,7 +15,7 @@
   [& args]
   (init/init)
   (core.init/require-and-set-default-plugins core.plugin.echo
-                                             core.plugin.nrepl
+                                             figurehead.plugin.nrepl
                                              figurehead.plugin.monitor
                                              figurehead.plugin.getinfo
                                              figurehead.plugin.mastermind)

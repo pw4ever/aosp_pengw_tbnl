@@ -11,7 +11,6 @@
              :as async
              :refer [thread chan <!! >!!]])
   (:import
-   (java.util UUID)
    (java.net Socket)
    (java.io IOException)
    (android.text.format Time)
@@ -29,6 +28,7 @@
 (def defaults
   (atom
    {
+    :stop-unblock-tag :stop-figurehead.plugin.mastermind
     :mastermind-port 4321
     :socket-timeout 15000
     :writer-buffer 1000
@@ -63,59 +63,89 @@
 
 (defn run
   [options]
-  (plugin/blocked-thread-wrapper
-   options
-   (let [verbose (:verbose options)
-         mastermind-address (:mastermind-address options)
-         mastermind-port (:mastermind-port options)]
-     (try
-       (let [sock (Socket. ^String mastermind-address
-                           ^int mastermind-port)]
-         (.setSoTimeout sock (:socket-timeout @defaults))
-         ;; reader thread
-         (thread
-           ;; catch sub-thread exception
-           (try
-             (with-open [^java.io.BufferedReader reader (io/reader sock)]
-               (while true
-                 (try
-                   (when-let [line (.readLine reader)]
-                     (try
-                       (let [message (read-string line)
-                             topic (bus/get-message-topic message)
-                             content (bus/remove-message-topic message)]
-                         (case topic
-                           :command
-                           (do
-                             (bus/say!! :command content))))
-                       (catch RuntimeException e
-                         (when verbose
-                           (print-stack-trace e)))))
-                   (catch IOException e
-                     (when verbose
-                       (print-stack-trace e))))))
-             (finally
-               (.close sock))))
-         ;; writer thread
-         (thread
-           (try
-             (with-open [^java.io.BufferedWriter writer (io/writer sock)]
-               (let [ch (chan (:writer-buffer @defaults))]
-                 (try
-                   (bus/register-listener ch)
-                   (while true
-                     (let [message (<!! ch)
-                           topic (bus/get-message-topic message)]
-                       (cond
-                        (not (contains? #{:command} topic))
-                        (do
-                          ;; do not echo command back
-                          (.write writer (prn-str message))
-                          (.flush writer)))))
-                   (finally
-                     (bus/unregister-listener ch)))))
-             (finally
-               (.close sock)))))))))
+  (let [verbose (:verbose options)
+        mastermind-address (:mastermind-address options)
+        mastermind-port (:mastermind-port options)]
+    (try
+      (let [sock (Socket. ^String mastermind-address
+                          ^int mastermind-port)]
+        (plugin/blocking-jail [
+                               ;; timeout
+                               nil
+                               ;; unblock-tag
+                               (:stop-unblock-tag @defaults)
+                               ;; finalization
+                               (do
+                                 (.close sock))
+                               ;; verbose
+                               verbose
+                               ]
+
+                              (.setSoTimeout sock (:socket-timeout @defaults))
+                              ;; reader thread
+                              (thread
+                                (with-open [^java.io.BufferedReader reader (io/reader sock)]
+                                  (plugin/looping-jail [
+                                                        ;; stop condition
+                                                        (plugin/get-state-entry :stop)
+                                                        ;; finalization
+                                                        (do
+                                                          (.close sock))
+                                                        ;; verbose
+                                                        verbose
+                                                        ]
+                                                       (try
+                                                         (when-let [line (.readLine reader)]
+                                                           (try
+                                                             (let [message (read-string line)
+                                                                   topic (bus/get-message-topic message)
+                                                                   content (bus/remove-message-topic message)]
+                                                               (case topic
+                                                                 :command
+                                                                 (do
+                                                                   (bus/say!! :command content))))
+                                                             (catch RuntimeException e
+                                                               (when verbose
+                                                                 (print-stack-trace e)))))
+                                                         (catch IOException e
+                                                           (when verbose
+                                                             (print-stack-trace e)))))))
+                              ;; writer thread
+                              (thread
+                                (with-open [^java.io.BufferedWriter writer (io/writer sock)]
+                                  (let [ch (chan (:writer-buffer @defaults))]
+                                    (bus/register-listener ch)
+                                    (plugin/looping-jail [
+                                                          ;; stop condition
+                                                          (plugin/get-state-entry :stop)
+                                                          ;; finalization
+                                                          (do
+                                                            (bus/unregister-listener ch)
+                                                            (.close sock))
+                                                          ;; verbose
+                                                          verbose
+                                                          ]
+                                                         (let [message (<!! ch)
+                                                               topic (bus/get-message-topic message)]
+                                                           (cond
+                                                            (not (contains? #{:command} topic))
+                                                            (do
+                                                              ;; do not echo command back
+                                                              (.write writer (prn-str message))
+                                                              (.flush writer))))))))))
+      (catch java.net.UnknownHostException e
+        (when verbose
+          (prn [:java.net.UnknownHostException e])))
+      (catch java.io.IOException e
+        (when verbose
+          (prn [:java.io.IOException e]))))))
+
+
+(defn stop
+  []
+  (plugin/set-state-entry :figurehead.plugin.mastermind
+                          :stop true)
+  (plugin/unblock-thread (:stop-unblock-tag @defaults)))
 
 
 (def config-map
@@ -123,4 +153,6 @@
   {:populate-parse-opts-vector populate-parse-opts-vector
    :init init
    :run run
-   :param {:auto-restart true}})
+   :stop stop
+   :param {:priority 90
+           :auto-restart true}})
