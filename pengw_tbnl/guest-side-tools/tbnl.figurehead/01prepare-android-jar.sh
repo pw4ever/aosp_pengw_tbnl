@@ -27,7 +27,8 @@ jar cf android-${target}.jar -C ${target} .
 # full
 target=full
 rm -rf ${target}
-for i in framework.jar core.jar framework-res.apk; do
+#for i in framework.jar core.jar framework-res.apk; do
+for i in framework.jar core.jar; do
     echo unpacking: $i
     unzip -qo $i -d ${target}
     echo unpacking done: $i
